@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Add valid Next.js configuration options here
+  reactStrictMode: true,
+  // You can add other options like:
+  // images, webpack, redirects, rewrites, etc.
 };
 
 export default nextConfig;
