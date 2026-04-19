@@ -4,6 +4,7 @@ import About from "./components/About";
 import TechStack from "./components/TechStack";
 import Experience from "./components/Experience";
 import Projects from "./components/Projects";
+import GameSection from "./components/GameSection";
 import Contact from "./components/Contact";
 import Footer from "./components/Footer";
 import Spotlight from "./components/Spotlight";
@@ -19,6 +20,7 @@ export default function Home() {
         <TechStack />
         <Experience />
         <Projects />
+        <GameSection />
         <Contact />
       </main>
       <Footer />
