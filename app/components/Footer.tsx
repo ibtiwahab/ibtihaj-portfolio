@@ -2,12 +2,17 @@
 
 import { Mail } from "lucide-react";
 import { FaGithub, FaLinkedin } from "react-icons/fa";
+import Logo from "./Logo";
 
 export default function Footer() {
   const year = new Date().getFullYear();
   return (
     <footer className="border-t border-white/5 mt-10">
       <div className="max-w-7xl mx-auto px-6 md:px-10 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
+        <a href="#home" className="group flex items-center">
+          <Logo size="sm" />
+        </a>
+
         <div className="flex items-center gap-4 text-zinc-400">
           <a
             href="https://github.com/ibtiwahab"

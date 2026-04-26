@@ -7,7 +7,13 @@
       "Bash(node -e:*)",
       "WebFetch(domain:www.pszostak.pl)",
       "WebFetch(domain:github.com)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Read(//c/Users/IPTIHAJ/Downloads/10464_Asteroid_L3.123c72035d71-abea-4a34-9131-5e9eeeffadcb/10464_Asteroid_L3.123c72035d71-abea-4a34-9131-5e9eeeffadcb/**)",
+      "Read(//c/Users/IPTIHAJ/Downloads/66-scifi-cartoon-rocket-obj/**)",
+      "Bash(cp \"C:/Users/IPTIHAJ/Downloads/10464_Asteroid_L3.123c72035d71-abea-4a34-9131-5e9eeeffadcb/10464_Asteroid_L3.123c72035d71-abea-4a34-9131-5e9eeeffadcb/\"* \"F:/React Projects/Portfolio/portfolio/public/models/asteroid/\")",
+      "Bash(cp \"C:/Users/IPTIHAJ/Downloads/66-scifi-cartoon-rocket-obj/\"* \"F:/React Projects/Portfolio/portfolio/public/models/rocket/\")",
+      "Read(//c/Users/IPTIHAJ/Downloads/LOGO FILE/LOGO FILE/SVG/**)",
+      "Bash(node scripts/rocket-bg-remove.mjs)"
     ]
   }
 }

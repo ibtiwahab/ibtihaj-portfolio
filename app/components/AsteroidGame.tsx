@@ -1,9 +1,10 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
 import {
   MutableRefObject,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -11,6 +12,15 @@ import {
   useState,
 } from "react";
 import * as THREE from "three";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+
+// ── Asset paths ────────────────────────────────────────────────────────────────
+const ASTEROID_OBJ = "/models/asteroid/10464_Asteroid_v1_Iterations-2.obj";
+const ASTEROID_TEX = "/models/asteroid/10464_Asteroid_v1_diffuse.jpg";
+
+// Preload so the first frame has the meshes ready
+useLoader.preload(OBJLoader, ASTEROID_OBJ);
+useLoader.preload(THREE.TextureLoader, ASTEROID_TEX);
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const FIELD_W  = 11;      // wider play area: ±5.5 in X
@@ -175,7 +185,9 @@ function GameScene({
   onHit: () => void;
   onScoreUp: () => void;
 }) {
-  const playerRef = useRef<THREE.Mesh>(null);
+  const playerRef = useRef<THREE.Group>(null);
+  const flameRef  = useRef<THREE.Mesh>(null);
+  const playerMatsRef = useRef<THREE.MeshStandardMaterial[]>([]);
   const iMeshRef  = useRef<THREE.InstancedMesh>(null);
   const rocks     = useRef<RockData[]>(
     Array.from({ length: MAX_ROCKS }, () => ({ ...EMPTY_ROCK }))
@@ -191,18 +203,42 @@ function GameScene({
   const gameT   = useRef(0);
   const prevPhase = useRef<Phase>("idle");
 
-  const geo = useMemo(() => new THREE.DodecahedronGeometry(ROCK_R, 0), []);
-  const mat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#9333ea",
-        emissive: "#7c3aed",
-        emissiveIntensity: 0.9,
-        roughness: 0.3,
-        metalness: 0.8,
-      }),
-    []
-  );
+  // ── Load assets ──────────────────────────────────────────────────────────────
+  const asteroidObj = useLoader(OBJLoader, ASTEROID_OBJ);
+  const asteroidTex = useLoader(THREE.TextureLoader, ASTEROID_TEX);
+
+  // Extract + normalize asteroid geometry (center, scale to ROCK_R)
+  const geo = useMemo(() => {
+    let src: THREE.BufferGeometry | null = null;
+    asteroidObj.traverse((c) => {
+      const m = c as THREE.Mesh;
+      if (!src && m.isMesh) src = m.geometry;
+    });
+    const g = (src as unknown as THREE.BufferGeometry).clone();
+    g.center();
+    g.computeBoundingSphere();
+    const r = g.boundingSphere?.radius ?? 1;
+    const s = ROCK_R / r;
+    g.scale(s, s, s);
+    // OBJ from 3DS Max is usually Z-up — tilt so the asteroid reads correctly
+    g.rotateX(-Math.PI / 2);
+    g.computeVertexNormals();
+    return g;
+  }, [asteroidObj]);
+
+  const mat = useMemo(() => {
+    asteroidTex.colorSpace = THREE.SRGBColorSpace;
+    asteroidTex.anisotropy = 4;
+    return new THREE.MeshStandardMaterial({
+      map: asteroidTex,
+      color: "#d8c9b8",
+      emissive: "#3b1e5a",
+      emissiveIntensity: 0.35,
+      roughness: 0.85,
+      metalness: 0.15,
+    });
+  }, [asteroidTex]);
+
 
   useEffect(() => {
     if (!iMeshRef.current) return;
@@ -243,22 +279,40 @@ function GameScene({
     }
 
     if (playerRef.current) {
-      const pulse = 1 + Math.sin(Date.now() * 0.0045) * 0.07;
-      playerRef.current.scale.setScalar(pulse);
+      const pulse = 1 + Math.sin(Date.now() * 0.0045) * 0.05;
+
+      // Flame flicker
+      if (flameRef.current) {
+        const f = 1 + Math.sin(Date.now() * 0.04) * 0.18 + Math.random() * 0.12;
+        flameRef.current.scale.set(f, 1.1 + Math.random() * 0.25, f);
+      }
+
       if (phase === "playing") {
         const tx = targetXRef.current * (FIELD_W / 2 - 0.9);
-        playerRef.current.position.x = THREE.MathUtils.lerp(
-          playerRef.current.position.x,
-          tx,
-          Math.min(1, dt * 12)
-        );
-        playerRef.current.rotation.y += dt * 1.6;
+        const prevX = playerRef.current.position.x;
+        const newX = THREE.MathUtils.lerp(prevX, tx, Math.min(1, dt * 12));
+        playerRef.current.position.x = newX;
 
-        // Flicker when invincible
+        // Bank the rocket based on lateral velocity
+        const vx = (newX - prevX) / Math.max(dt, 0.0001);
+        const bank = THREE.MathUtils.clamp(-vx * 0.22, -0.5, 0.5);
+        playerRef.current.rotation.z = THREE.MathUtils.lerp(
+          playerRef.current.rotation.z,
+          bank,
+          Math.min(1, dt * 8)
+        );
+
+        // Flicker materials when invincible
         const flicker = invT.current > 0
-          ? 0.3 + Math.abs(Math.sin(Date.now() * 0.03)) * 0.7
+          ? 0.35 + Math.abs(Math.sin(Date.now() * 0.03)) * 0.65
           : 1;
-        (playerRef.current.material as THREE.MeshStandardMaterial).opacity = flicker;
+        playerMatsRef.current.forEach((m) => {
+          m.opacity = flicker;
+          m.transparent = flicker < 1;
+        });
+        playerRef.current.scale.setScalar(pulse);
+      } else {
+        playerRef.current.scale.setScalar(pulse);
       }
     }
 
@@ -339,18 +393,111 @@ function GameScene({
       <pointLight position={[0, -4, 5]} intensity={1.5} color="#22d3ee" />
       <pointLight position={[-6, 2, 2]} intensity={1.2} color="#d946ef" />
 
-      {/* Player */}
-      <mesh ref={playerRef} position={[0, PLAYER_Y, 0]}>
-        <coneGeometry args={[0.38, 0.95, 7]} />
-        <meshStandardMaterial
-          color="#22d3ee"
-          emissive="#06b6d4"
-          emissiveIntensity={1.8}
-          roughness={0.1}
-          metalness={0.9}
-          transparent
-        />
-      </mesh>
+      {/* Player — procedural 3D rocket */}
+      <group ref={playerRef} position={[0, PLAYER_Y, 0]}>
+        {/* Nose cone (red) */}
+        <mesh position={[0, 0.78, 0]} castShadow>
+          <coneGeometry args={[0.28, 0.55, 24]} />
+          <meshStandardMaterial
+            ref={(m) => { if (m && !playerMatsRef.current.includes(m)) playerMatsRef.current.push(m); }}
+            color="#ef4444"
+            roughness={0.3}
+            metalness={0.5}
+          />
+        </mesh>
+
+        {/* Body (white cylinder) */}
+        <mesh position={[0, 0.1, 0]}>
+          <cylinderGeometry args={[0.28, 0.28, 0.85, 24]} />
+          <meshStandardMaterial
+            ref={(m) => { if (m && !playerMatsRef.current.includes(m)) playerMatsRef.current.push(m); }}
+            color="#f1f5f9"
+            roughness={0.35}
+            metalness={0.6}
+          />
+        </mesh>
+
+        {/* Red trim ring under the nose */}
+        <mesh position={[0, 0.5, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.285, 0.035, 12, 32]} />
+          <meshStandardMaterial
+            ref={(m) => { if (m && !playerMatsRef.current.includes(m)) playerMatsRef.current.push(m); }}
+            color="#ef4444"
+            roughness={0.3}
+            metalness={0.6}
+          />
+        </mesh>
+
+        {/* Window (cyan emissive porthole) */}
+        <mesh position={[0, 0.2, 0.27]}>
+          <sphereGeometry args={[0.11, 20, 16]} />
+          <meshStandardMaterial
+            ref={(m) => { if (m && !playerMatsRef.current.includes(m)) playerMatsRef.current.push(m); }}
+            color="#0ea5e9"
+            emissive="#22d3ee"
+            emissiveIntensity={1.6}
+            roughness={0.15}
+            metalness={0.7}
+          />
+        </mesh>
+
+        {/* Engine bell at the bottom */}
+        <mesh position={[0, -0.4, 0]}>
+          <cylinderGeometry args={[0.32, 0.22, 0.22, 24]} />
+          <meshStandardMaterial
+            ref={(m) => { if (m && !playerMatsRef.current.includes(m)) playerMatsRef.current.push(m); }}
+            color="#52525b"
+            roughness={0.4}
+            metalness={0.85}
+          />
+        </mesh>
+
+        {/* Three fins around the base — 0°, 120°, 240° */}
+        {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((a, i) => (
+          <mesh
+            key={i}
+            position={[Math.sin(a) * 0.28, -0.22, Math.cos(a) * 0.28]}
+            rotation={[0, -a, 0]}
+          >
+            <boxGeometry args={[0.04, 0.36, 0.32]} />
+            <meshStandardMaterial
+              ref={(m) => { if (m && !playerMatsRef.current.includes(m)) playerMatsRef.current.push(m); }}
+              color="#ef4444"
+              roughness={0.4}
+              metalness={0.5}
+            />
+          </mesh>
+        ))}
+
+        {/* Engine flame (additive cone — flickers via per-frame scale) */}
+        <mesh ref={flameRef} position={[0, -0.75, 0]} rotation={[Math.PI, 0, 0]}>
+          <coneGeometry args={[0.18, 0.55, 18, 1, true]} />
+          <meshBasicMaterial
+            color="#fb923c"
+            transparent
+            opacity={0.85}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+
+        {/* Inner blue-white flame core */}
+        <mesh position={[0, -0.62, 0]} rotation={[Math.PI, 0, 0]}>
+          <coneGeometry args={[0.09, 0.3, 14, 1, true]} />
+          <meshBasicMaterial
+            color="#fde68a"
+            transparent
+            opacity={0.95}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+
+        {/* Engine point-light — lights nearby asteroids */}
+        <pointLight position={[0, -0.9, 0]} intensity={2.4} color="#fb923c" distance={3.5} />
+      </group>
 
       <instancedMesh ref={iMeshRef} args={[geo, mat, MAX_ROCKS]} />
     </>
@@ -466,13 +613,15 @@ export default function AsteroidGame() {
         gl={{ antialias: true, alpha: false }}
         style={{ background: "#07040d" }}
       >
-        <GameScene
-          phaseRef={phaseRef}
-          targetXRef={targetXRef}
-          inputRef={inputRef}
-          onHit={handleHit}
-          onScoreUp={handleScoreUp}
-        />
+        <Suspense fallback={null}>
+          <GameScene
+            phaseRef={phaseRef}
+            targetXRef={targetXRef}
+            inputRef={inputRef}
+            onHit={handleHit}
+            onScoreUp={handleScoreUp}
+          />
+        </Suspense>
       </Canvas>
 
       {/* Subtle vignette for depth */}
